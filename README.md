@@ -1,4 +1,4 @@
-# pymongo-job-queue (https://codecov.io/github/xverges/pymongo-job-queue)
+# pymongo-job-queue (under further development - do not use)
 
 This package (`pymjq`) is a simple MongoDB based job queue for Python. By using capped collections and tailable cursors, you can queue up data to be consumed by a service worker in order to process your long running tasks asynchronously.
 
