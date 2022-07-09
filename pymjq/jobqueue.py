@@ -44,11 +44,17 @@ class JobQueue:
             #        collection. The size of the capped collection includes a small amount
             #        of space for internal overhead.
             # max - you may also specify a maximum number of documents for the collection
-            if not size:
-                size = 100000
-            self.db.create_collection(self.collection_name,
-                                      capped=capped,
-                                      size=size)
+            # capped - If size or max then capped must be True (ref tests for valid())
+            
+            if capped:
+                if not size:
+                    size = 100000
+                self.db.create_collection(self.collection_name,
+                                          capped=capped,
+                                          size=size)
+            else:
+                self.db.create_collection(self.collection_name)
+                
         except:
             raise Exception('Collection "{}" already created'.format(self.collection_name))
 
@@ -63,6 +69,10 @@ class JobQueue:
 
     def valid(self):
         """ Checks to see if the jobqueue is a capped collection. """
+        # empty query to force past lazy execution (there has been no queries options returns empty)
+        # TODO: log as bug
+        for _d in self.q.find({}):
+            pass
         opts = self.db[self.collection_name].options()
         if opts.get('capped', False):
             return True
@@ -92,7 +102,7 @@ class JobQueue:
             status=self.WAITING,
             data=data)
         try:
-            self.q.insert(doc, manipulate=False)
+            self.q.insert_one(doc)
         except:
             raise Exception('could not add to queue')
         return True
@@ -137,10 +147,15 @@ class JobQueue:
 
     def queue_count(self):
         """ Returns the number of jobs waiting in the queue. """
-        cursor = self.q.find({'status': self.WAITING})
-        if cursor:
-            return cursor.count()
+        #cursor = self.q.find({'status': self.WAITING})
+        #if cursor:
+        #    return cursor.count()
+        return self.q.count_documents({'status': self.WAITING})
 
     def clear_queue(self):
-        """ Drops the queue collection. """
-        self.q.drop()
+        """
+        .. v2.0.0 changed from drop collection to delete many - otherwise next access recreates collection as uncapped
+        """ 
+        
+        self.q.delete_many({})
+        
