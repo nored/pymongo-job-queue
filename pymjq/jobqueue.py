@@ -3,6 +3,31 @@ from datetime import datetime
 import time
 
 
+''' ..v2.0.0 custom exceptions '''
+
+class JobQueueBaseError(Exception):
+    def __init__(self, message=None):
+        self.message = message
+        super().__init__(self.message)
+        
+class JobQueueCreateError(JobQueueBaseError):
+    def __init__(self, message=None):
+        self.message = message
+        super().__init__(self.message)
+
+class JobQueueEmptyError(JobQueueBaseError):
+    def __init__(self, message=None):
+        self.message = message
+        super().__init__(self.message)
+
+class JobQueuePubError(JobQueueBaseError):
+    def __init__(self, message=None):
+        self.message = message
+        super().__init__(self.message)
+
+
+
+
 class JobQueue:
 
     # Capped collection documents can not have its size updated
@@ -28,13 +53,13 @@ class JobQueue:
         self.q = self.db[self.collection_name]
         self.iterator_wait = iterator_wait
         if self.iterator_wait is None:
-            def deafult_iterator_wait():
+            def default_iterator_wait():
                 if not self.silent:
                     print ('waiting!')
                 time.sleep(5)
                 return True
 
-            self.iterator_wait = deafult_iterator_wait
+            self.iterator_wait = default_iterator_wait
 
     def _create(self, size=None, capped=True):
         """ Creates a Capped Collection. """
@@ -44,7 +69,7 @@ class JobQueue:
             #        collection. The size of the capped collection includes a small amount
             #        of space for internal overhead.
             # max - you may also specify a maximum number of documents for the collection
-            # capped - If size or max then capped must be True (ref tests for valid())
+            '''.. v2.0.0. capped - If size or max then capped must be True (ref tests for valid())'''
             
             if capped:
                 if not size:
@@ -53,10 +78,12 @@ class JobQueue:
                                           capped=capped,
                                           size=size)
             else:
+                ''' .. v2.0.0 this needed to be here to allow tests to create a non-capped - revisit'''
                 self.db.create_collection(self.collection_name)
                 
         except:
-            raise Exception('Collection "{}" already created'.format(self.collection_name))
+            '''..v2.0.0'''
+            raise JobQueueCreateError(f"creating collection {self.collection_name}")
 
     def _find_opts(self):
         if hasattr(pymongo, 'CursorType'):
@@ -69,10 +96,6 @@ class JobQueue:
 
     def valid(self):
         """ Checks to see if the jobqueue is a capped collection. """
-        # empty query to force past lazy execution (there has been no queries options returns empty)
-        # TODO: log as bug
-        for _d in self.q.find({}):
-            pass
         opts = self.db[self.collection_name].options()
         if opts.get('capped', False):
             return True
@@ -82,16 +105,20 @@ class JobQueue:
         """ Runs the next job in the queue. """
         cursor = self.q.find({'status': self.WAITING},
                              **self._find_opts()).limit(1)
-        row = cursor.next()
-        row = self.q.find_one_and_update({'_id': row['_id'],
+        try:
+            row = cursor.next()
+            row = self.q.find_one_and_update({'_id': row['_id'],
                                           'status': self.WAITING},
                                          {'$set':
                                             {'status': self.DONE,
                                              'ts.started': datetime.utcnow(),
                                              'ts.done': datetime.utcnow()}})
-        if row:
-            return row
-        raise Exception('There are no jobs in the queue')
+            if row:
+                return row
+        
+            '''..v2.0.0'''
+        except StopIteration:
+            raise JobQueueEmptyError('queue empty')
 
     def pub(self, data=None):
         """ Publishes a doc to the work queue. """
@@ -104,7 +131,8 @@ class JobQueue:
         try:
             self.q.insert_one(doc)
         except:
-            raise Exception('could not add to queue')
+            '''..v2.0.0'''
+            raise JobQueuePubError('could not add to queue')
         return True
 
     def __iter__(self):
@@ -156,6 +184,5 @@ class JobQueue:
         """
         .. v2.0.0 changed from drop collection to delete many - otherwise next access recreates collection as uncapped
         """ 
-        
         self.q.delete_many({})
         
