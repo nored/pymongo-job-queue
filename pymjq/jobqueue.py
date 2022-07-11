@@ -36,6 +36,7 @@ class JobQueue:
     WAITING = 'waiting'.ljust(10, '_')
     WORKING = 'working'.ljust(10, '_')
 
+
     def __init__(self, db, silent=False, iterator_wait=None, size=None, collection_name='jobqueue'):
         """ Return an instance of a JobQueue.
         Initialization requires one argument, the database,
@@ -102,23 +103,32 @@ class JobQueue:
         return False
 
     def next(self):
-        """ Runs the next job in the queue. """
-        cursor = self.q.find({'status': self.WAITING},
-                             **self._find_opts()).limit(1)
+        """ 
+        Gets the next job in the queue. Marks it as started.
+        Raises JobQueueEmptyError if the queue is empty
+        """
+        #cursor = self.q.find({'status': self.WAITING},
+        #                     **self._find_opts()).limit(1)
         try:
-            row = cursor.next()
-            row = self.q.find_one_and_update({'_id': row['_id'],
-                                          'status': self.WAITING},
-                                         {'$set':
-                                            {'status': self.DONE,
-                                             'ts.started': datetime.utcnow(),
-                                             'ts.done': datetime.utcnow()}})
+            #row = cursor.next()
+            row = self.q.find_one_and_update({
+                                              'status': self.WAITING
+                                             },
+                                             {'$set':
+                                                {'status': self.DONE,
+                                                 'ts.started': datetime.utcnow(),
+                                                 'ts.done': datetime.utcnow()
+                                                }
+                                             }
+                                            )
             if row:
                 return row
-        
-            '''..v2.0.0'''
-        except StopIteration:
-            raise JobQueueEmptyError('queue empty')
+            else:
+                '''..v2.0.0'''
+                raise JobQueueEmptyError('queue empty')
+        except Exception as ex:
+            raise ex('getting next job')
+
 
     def pub(self, data=None):
         """ Publishes a doc to the work queue. """
@@ -178,6 +188,7 @@ class JobQueue:
         #cursor = self.q.find({'status': self.WAITING})
         #if cursor:
         #    return cursor.count()
+        '''...v2.0.0.0'''
         return self.q.count_documents({'status': self.WAITING})
 
     def clear_queue(self):
