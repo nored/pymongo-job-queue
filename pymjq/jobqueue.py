@@ -126,8 +126,8 @@ class JobQueue:
             else:
                 '''..v2.0.0'''
                 raise JobQueueEmptyError('queue empty')
-        except Exception as ex:
-            raise ex('getting next job')
+        except Exception:
+            raise
 
 
     def pub(self, data=None):
