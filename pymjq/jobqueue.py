@@ -3,6 +3,31 @@ from datetime import datetime
 import time
 
 
+''' ..v2.0.0 custom exceptions '''
+
+class JobQueueBaseError(Exception):
+    def __init__(self, message=None):
+        self.message = message
+        super().__init__(self.message)
+        
+class JobQueueCreateError(JobQueueBaseError):
+    def __init__(self, message=None):
+        self.message = message
+        super().__init__(self.message)
+
+class JobQueueEmptyError(JobQueueBaseError):
+    def __init__(self, message=None):
+        self.message = message
+        super().__init__(self.message)
+
+class JobQueuePubError(JobQueueBaseError):
+    def __init__(self, message=None):
+        self.message = message
+        super().__init__(self.message)
+
+
+
+
 class JobQueue:
 
     # Capped collection documents can not have its size updated
@@ -10,6 +35,7 @@ class JobQueue:
     DONE = 'done'.ljust(10, '_')
     WAITING = 'waiting'.ljust(10, '_')
     WORKING = 'working'.ljust(10, '_')
+
 
     def __init__(self, db, silent=False, iterator_wait=None, size=None, collection_name='jobqueue'):
         """ Return an instance of a JobQueue.
@@ -28,13 +54,13 @@ class JobQueue:
         self.q = self.db[self.collection_name]
         self.iterator_wait = iterator_wait
         if self.iterator_wait is None:
-            def deafult_iterator_wait():
+            def default_iterator_wait():
                 if not self.silent:
                     print ('waiting!')
                 time.sleep(5)
                 return True
 
-            self.iterator_wait = deafult_iterator_wait
+            self.iterator_wait = default_iterator_wait
 
     def _create(self, size=None, capped=True):
         """ Creates a Capped Collection. """
@@ -44,13 +70,21 @@ class JobQueue:
             #        collection. The size of the capped collection includes a small amount
             #        of space for internal overhead.
             # max - you may also specify a maximum number of documents for the collection
-            if not size:
-                size = 100000
-            self.db.create_collection(self.collection_name,
-                                      capped=capped,
-                                      size=size)
+            '''.. v2.0.0. capped - If size or max then capped must be True (ref tests for valid())'''
+            
+            if capped:
+                if not size:
+                    size = 100000
+                self.db.create_collection(self.collection_name,
+                                          capped=capped,
+                                          size=size)
+            else:
+                ''' .. v2.0.0 this needed to be here to allow tests to create a non-capped - revisit'''
+                self.db.create_collection(self.collection_name)
+                
         except:
-            raise Exception('Collection "{}" already created'.format(self.collection_name))
+            '''..v2.0.0'''
+            raise JobQueueCreateError(f"creating collection {self.collection_name}")
 
     def _find_opts(self):
         if hasattr(pymongo, 'CursorType'):
@@ -69,19 +103,32 @@ class JobQueue:
         return False
 
     def next(self):
-        """ Runs the next job in the queue. """
-        cursor = self.q.find({'status': self.WAITING},
-                             **self._find_opts()).limit(1)
-        row = cursor.next()
-        row = self.q.find_one_and_update({'_id': row['_id'],
-                                          'status': self.WAITING},
-                                         {'$set':
-                                            {'status': self.DONE,
-                                             'ts.started': datetime.utcnow(),
-                                             'ts.done': datetime.utcnow()}})
-        if row:
-            return row
-        raise Exception('There are no jobs in the queue')
+        """ 
+        Gets the next job in the queue. Marks it as started.
+        Raises JobQueueEmptyError if the queue is empty
+        """
+        #cursor = self.q.find({'status': self.WAITING},
+        #                     **self._find_opts()).limit(1)
+        try:
+            #row = cursor.next()
+            row = self.q.find_one_and_update({
+                                              'status': self.WAITING
+                                             },
+                                             {'$set':
+                                                {'status': self.DONE,
+                                                 'ts.started': datetime.utcnow(),
+                                                 'ts.done': datetime.utcnow()
+                                                }
+                                             }
+                                            )
+            if row:
+                return row
+            else:
+                '''..v2.0.0'''
+                raise JobQueueEmptyError('queue empty')
+        except Exception:
+            raise
+
 
     def pub(self, data=None):
         """ Publishes a doc to the work queue. """
@@ -92,9 +139,10 @@ class JobQueue:
             status=self.WAITING,
             data=data)
         try:
-            self.q.insert(doc, manipulate=False)
+            self.q.insert_one(doc)
         except:
-            raise Exception('could not add to queue')
+            '''..v2.0.0'''
+            raise JobQueuePubError('could not add to queue')
         return True
 
     def __iter__(self):
@@ -137,10 +185,15 @@ class JobQueue:
 
     def queue_count(self):
         """ Returns the number of jobs waiting in the queue. """
-        cursor = self.q.find({'status': self.WAITING})
-        if cursor:
-            return cursor.count()
+        #cursor = self.q.find({'status': self.WAITING})
+        #if cursor:
+        #    return cursor.count()
+        '''...v2.0.0.0'''
+        return self.q.count_documents({'status': self.WAITING})
 
     def clear_queue(self):
-        """ Drops the queue collection. """
-        self.q.drop()
+        """
+        .. v2.0.0 changed from drop collection to delete many - otherwise next access recreates collection as uncapped
+        """ 
+        self.q.delete_many({})
+        

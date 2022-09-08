@@ -1,17 +1,27 @@
 from pymongo import MongoClient
-from jobqueue import JobQueue
+from pymjq.jobqueue import JobQueue
 import unittest
+from dotenv import load_dotenv
+
+import os
+
+
+load_dotenv()
+mongo_user = os.environ.get('mongo_user')
+mongo_secret = os.environ.get('mongo_secret')
 
 class K(object):
     host = 'localhost'
     port = 27017
     collection = 'test_jobqueue'
-
+    uri = "mongodb+srv://" + mongo_user + ":" + mongo_secret + "@cluster0.y5dojfq.mongodb.net/?retryWrites=true&w=majority",
+    
 class TestJobQueue(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        client = MongoClient(K.host, K.port)
+        client = MongoClient(K.uri)
+        #client = MongoClient(K.host, K.port)
         client.pymongo_test[K.collection].drop()
         cls.db = client.pymongo_test
 
